@@ -19,7 +19,7 @@ st.set_page_config(
 
 
 # =========================================================
-# TRIAL ACCESS PASSWORD GATE
+# PASSWORD GATE
 # =========================================================
 
 def get_app_password():
@@ -58,7 +58,7 @@ if not check_password():
 
 
 # =========================================================
-# 7-DAY DEMO TRIAL
+# 7-DAY TRIAL
 # =========================================================
 
 TRIAL_FILE = Path(__file__).with_name("factory_trial.json")
@@ -91,26 +91,16 @@ days_left = max(0, (trial_end - date.today()).days)
 
 
 # =========================================================
-# PERSISTENCE (JSON file on server disk)
+# PERSISTENCE
 # =========================================================
 
 DATA_FILE = Path(__file__).with_name("factory_data.json")
 
 PERSIST_KEYS = [
-    "orders",
-    "raw_receipts",
-    "material_consumption",
-    "production_jobs",
-    "dispatch_records",
-    "store_verifications",
-    "order_closures",
-    "labour_entries",
-    "factory_lines",
-    "factory_teams",
-    "factory_products",
-    "production_manager_phone",
-    "store_manager_phone",
-    "dispatch_manager_phone",
+    "orders", "raw_receipts", "material_consumption", "production_jobs",
+    "dispatch_records", "store_verifications", "order_closures", "labour_entries",
+    "factory_lines", "factory_teams", "factory_products",
+    "production_manager_phone", "store_manager_phone", "dispatch_manager_phone",
     "next_order",
 ]
 
@@ -118,12 +108,9 @@ PERSIST_KEYS = [
 def save_data():
     try:
         data = {k: st.session_state[k] for k in PERSIST_KEYS}
-        DATA_FILE.write_text(
-            json.dumps(data, indent=2, default=str),
-            encoding="utf-8",
-        )
+        DATA_FILE.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
     except Exception as e:
-        print(f"[save_data] failed: {e}")
+        print(f"[save_data] {e}")
 
 
 def load_data():
@@ -131,48 +118,39 @@ def load_data():
         return
     try:
         data = json.loads(DATA_FILE.read_text(encoding="utf-8"))
-        for key, value in data.items():
-            if key in PERSIST_KEYS:
-                st.session_state[key] = value
+        for k, v in data.items():
+            if k in PERSIST_KEYS:
+                st.session_state[k] = v
     except Exception as e:
-        print(f"[load_data] failed: {e}")
+        print(f"[load_data] {e}")
 
 
 # =========================================================
-# SESSION DATA
+# SESSION DEFAULTS
 # =========================================================
 
 DEFAULTS = {
-    "orders": [],
-    "raw_receipts": [],
-    "material_consumption": [],
-    "production_jobs": [],
-    "dispatch_records": [],
-    "store_verifications": [],
-    "order_closures": [],
-    "labour_entries": [],
+    "orders": [], "raw_receipts": [], "material_consumption": [],
+    "production_jobs": [], "dispatch_records": [], "store_verifications": [],
+    "order_closures": [], "labour_entries": [],
     "factory_lines": ["Line 1", "Line 2", "Line 3", "Cutting Line", "Rolling Line", "Finishing Line"],
     "factory_teams": ["Team A", "Team B", "Team C", "Shift 1", "Shift 2", "Shift 3"],
     "factory_products": ["Flat Bar", "Round Bar", "Angle", "Channel", "Square Bar"],
-    "production_manager_phone": "",
-    "store_manager_phone": "",
-    "dispatch_manager_phone": "",
+    "production_manager_phone": "", "store_manager_phone": "", "dispatch_manager_phone": "",
     "next_order": 1001,
 }
 
-for key, value in DEFAULTS.items():
-    if key not in st.session_state:
-        st.session_state[key] = value.copy() if isinstance(value, list) else value
+for k, v in DEFAULTS.items():
+    if k not in st.session_state:
+        st.session_state[k] = v.copy() if isinstance(v, list) else v
 
-
-# Load saved data once per session (survives logout, refresh, browser close)
 if "data_loaded" not in st.session_state:
     load_data()
     st.session_state["data_loaded"] = True
 
 
 # =========================================================
-# HELPER FUNCTIONS
+# HELPERS
 # =========================================================
 
 def product_key(product, size):
@@ -182,12 +160,8 @@ def product_key(product, size):
 def line_items(order):
     items = order.get("items")
     if not items:
-        items = [{
-            "product": order.get("product", ""),
-            "size": order.get("size", ""),
-            "quantity": float(order.get("quantity", 0)),
-            "rate": float(order.get("rate", 0)),
-        }]
+        items = [{"product": order.get("product", ""), "size": order.get("size", ""),
+                  "quantity": float(order.get("quantity", 0)), "rate": float(order.get("rate", 0))}]
         order["items"] = items
     return [(f"{order['id']}-{i + 1}", item) for i, item in enumerate(items)]
 
@@ -197,11 +171,7 @@ def order_quantity(order):
 
 
 def dispatched_for_line(line_id):
-    return sum(
-        float(x.get("quantity", 0))
-        for x in st.session_state.dispatch_records
-        if x.get("line_id") == line_id
-    )
+    return sum(float(x.get("quantity", 0)) for x in st.session_state.dispatch_records if x.get("line_id") == line_id)
 
 
 def line_balance(item, line_id):
@@ -218,8 +188,7 @@ def get_job(line_id):
 
 
 def line_status(item, line_id):
-    lb = line_balance(item, line_id)
-    if lb <= 0:
+    if line_balance(item, line_id) <= 0:
         return "COMPLETED"
     job = get_job(line_id)
     if not job:
@@ -228,48 +197,37 @@ def line_status(item, line_id):
         return "STORE VERIFICATION"
     if job.get("status") == "IN PRODUCTION":
         return "IN PRODUCTION"
-    return "PENDING"
-
-
-def order_status(order):
-    statuses = []
-    for line_id, item in line_items(order):
-        s = line_status(item, line_id)
-        if s != "COMPLETED":
-            statuses.append(s)
-    if not statuses:
-        return "COMPLETED"
-    return " / ".join(sorted(set(statuses)))
+    return job.get("status", "PENDING")
 
 
 def raw_materials():
-    return sorted({item["material"] for item in st.session_state.raw_receipts})
+    return sorted({r["material"] for r in st.session_state.raw_receipts})
 
 
-def raw_received(material):
-    return sum(float(x.get("quantity", 0)) for x in st.session_state.raw_receipts if x.get("material") == material)
+def raw_received(m):
+    return sum(float(x.get("quantity", 0)) for x in st.session_state.raw_receipts if x.get("material") == m)
 
 
-def raw_consumed(material):
-    return sum(float(x.get("raw_input", 0)) for x in st.session_state.material_consumption if x.get("material") == material)
+def raw_consumed(m):
+    return sum(float(x.get("raw_input", 0)) for x in st.session_state.material_consumption if x.get("material") == m)
 
 
-def raw_available(material):
-    return max(0, raw_received(material) - raw_consumed(material))
+def raw_available(m):
+    return max(0, raw_received(m) - raw_consumed(m))
 
 
-def verified_finished_stock(product, size):
-    key = product_key(product, size)
-    return sum(float(x.get("quantity", 0)) for x in st.session_state.store_verifications if x.get("product_key") == key)
+def verified_finished_stock(p, s):
+    k = product_key(p, s)
+    return sum(float(x.get("quantity", 0)) for x in st.session_state.store_verifications if x.get("product_key") == k)
 
 
-def dispatched_for_product(product, size):
-    key = product_key(product, size)
-    return sum(float(x.get("quantity", 0)) for x in st.session_state.dispatch_records if x.get("product_key") == key)
+def dispatched_for_product(p, s):
+    k = product_key(p, s)
+    return sum(float(x.get("quantity", 0)) for x in st.session_state.dispatch_records if x.get("product_key") == k)
 
 
-def available_finished_stock(product, size):
-    return max(0, verified_finished_stock(product, size) - dispatched_for_product(product, size))
+def available_finished_stock(p, s):
+    return max(0, verified_finished_stock(p, s) - dispatched_for_product(p, s))
 
 
 def production_jobs_waiting_store():
@@ -287,19 +245,34 @@ def dispatch_queue():
     return result
 
 
+def pending_production_items():
+    pending = []
+    for order in st.session_state.orders:
+        for idx, (line_id, item) in enumerate(line_items(order), start=1):
+            bal = line_balance(item, line_id)
+            if bal <= 0:
+                continue
+            avail = available_finished_stock(item["product"], item["size"])
+            required = max(0, bal - avail)
+            if required <= 0:
+                continue
+            job = get_job(line_id)
+            pending.append({
+                "line_id": line_id, "order": order, "item": item, "item_num": idx,
+                "balance": bal, "available": avail, "production_required": required,
+                "has_job": job is not None, "job_status": job.get("status", "-") if job else "-",
+            })
+    return pending
+
+
 def clear_all_demo_data():
-    st.session_state.orders = []
-    st.session_state.raw_receipts = []
-    st.session_state.material_consumption = []
-    st.session_state.production_jobs = []
-    st.session_state.dispatch_records = []
-    st.session_state.store_verifications = []
-    st.session_state.order_closures = []
-    st.session_state.labour_entries = []
+    for k in ["orders", "raw_receipts", "material_consumption", "production_jobs",
+              "dispatch_records", "store_verifications", "order_closures", "labour_entries"]:
+        st.session_state[k] = []
     st.session_state.next_order = 1001
-    st.session_state.pop("new_order_items_df", None)
-    st.session_state.pop("new_order_items_editor", None)
-    st.session_state.pop("last_created_order", None)
+    for k in ["new_order_items_df", "new_order_items_editor", "last_created_order",
+              "dp_order_df", "dp_order_sig", "dp_extra_df"]:
+        st.session_state.pop(k, None)
     try:
         if DATA_FILE.exists():
             DATA_FILE.unlink()
@@ -308,126 +281,76 @@ def clear_all_demo_data():
 
 
 # =========================================================
-# WHATSAPP HELPERS
+# WHATSAPP
 # =========================================================
 
-def clean_phone(phone: str) -> str:
-    """Keep only digits. Must include country code, e.g. 919876543210."""
-    return re.sub(r"\D", "", phone or "")
+def clean_phone(p):
+    return re.sub(r"\D", "", p or "")
 
 
-def build_whatsapp_link(phone: str, message: str) -> str:
-    """Return a wa.me link that opens WhatsApp with the message pre-filled."""
+def wa_link(phone, message):
     return f"https://wa.me/{clean_phone(phone)}?text={quote(message)}"
 
 
-def order_whatsapp_text(order: dict) -> str:
-    lines = [
-        "🏭 NEW PRODUCTION ORDER",
-        "",
-        f"Order: {order['id']}",
-        f"Customer: {order['customer']}",
-        f"Priority: {order.get('priority', 'Normal')}",
-        f"Delivery: {order.get('pickup_date', '-')}",
-        "",
-        "ITEMS TO PRODUCE:",
-    ]
-    for i, item in enumerate(order.get("items", []), start=1):
-        lines.append(
-            f"{i}. {item['product']} | {item['size']} | {item['quantity']:,.2f} KG"
-        )
+def order_wa_text(order):
+    lines = ["🏭 NEW PRODUCTION ORDER", "",
+             f"Order: {order['id']}", f"Customer: {order['customer']}",
+             f"Priority: {order.get('priority', 'Normal')}",
+             f"Delivery: {order.get('pickup_date', '-')}", "", "ITEMS TO PRODUCE:"]
+    for i, it in enumerate(order.get("items", []), 1):
+        lines.append(f"{i}. {it['product']} | {it['size']} | {it['quantity']:,.2f} KG")
     if order.get("remarks"):
-        lines.append("")
-        lines.append(f"Remarks: {order['remarks']}")
-    lines.append("")
-    lines.append("Please confirm production line and team.")
+        lines += ["", f"Remarks: {order['remarks']}"]
+    lines += ["", "Please confirm production line and team."]
     return "\n".join(lines)
 
 
-def store_whatsapp_text(order: dict) -> str:
-    lines = [
-        "📦 NEW ORDER — STORE / MATERIAL CHECK",
-        "",
-        f"Order: {order['id']}",
-        f"Customer: {order['customer']}",
-        f"Delivery: {order.get('pickup_date', '-')}",
-        "",
-        "ITEMS TO PREPARE / VERIFY:",
-    ]
-    for i, item in enumerate(order.get("items", []), start=1):
-        lines.append(
-            f"{i}. {item['product']} | {item['size']} | {item['quantity']:,.2f} KG"
-        )
-    lines.append("")
-    lines.append("Please confirm raw material availability and finished-goods space.")
+def store_wa_text(order):
+    lines = ["📦 NEW ORDER — STORE / MATERIAL CHECK", "",
+             f"Order: {order['id']}", f"Customer: {order['customer']}",
+             f"Delivery: {order.get('pickup_date', '-')}", "", "ITEMS:"]
+    for i, it in enumerate(order.get("items", []), 1):
+        lines.append(f"{i}. {it['product']} | {it['size']} | {it['quantity']:,.2f} KG")
+    lines += ["", "Please confirm material and space."]
     return "\n".join(lines)
 
 
-def dispatch_whatsapp_text(order: dict) -> str:
-    lines = [
-        "🚚 NEW ORDER — DISPATCH PLANNING",
-        "",
-        f"Order: {order['id']}",
-        f"Customer: {order['customer']}",
-        f"Priority: {order.get('priority', 'Normal')}",
-        f"Delivery: {order.get('pickup_date', '-')}",
-        "",
-        "ITEMS:",
-    ]
-    for i, item in enumerate(order.get("items", []), start=1):
-        ready = available_finished_stock(item["product"], item["size"])
-        lines.append(
-            f"{i}. {item['product']} | {item['size']} | "
-            f"Qty {item['quantity']:,.2f} KG | "
-            f"Verified ready: {ready:,.2f} KG"
-        )
-    lines.append("")
-    lines.append("Please plan truck, driver and loading team.")
-    lines.append("Dispatch only verified stock — check Loading & Dispatch page.")
+def dispatch_wa_text(order):
+    lines = ["🚚 NEW ORDER — DISPATCH PLANNING", "",
+             f"Order: {order['id']}", f"Customer: {order['customer']}",
+             f"Priority: {order.get('priority', 'Normal')}",
+             f"Delivery: {order.get('pickup_date', '-')}", "", "ITEMS:"]
+    for i, it in enumerate(order.get("items", []), 1):
+        ready = available_finished_stock(it["product"], it["size"])
+        lines.append(f"{i}. {it['product']} | {it['size']} | Qty {it['quantity']:,.2f} KG | Verified: {ready:,.2f} KG")
+    lines += ["", "Dispatch only verified stock."]
     return "\n".join(lines)
 
 
 # =========================================================
-# HEADER
+# HEADER + SIDEBAR
 # =========================================================
 
 st.title("🏭 Factory AI")
 st.caption("Factory Control System • Orders • Production • Material • Labour • Dispatch • AI Report")
 st.info(f"Demo Mode | {days_left} day(s) remaining | No sample factory data is loaded.")
 
-
-# =========================================================
-# SIDEBAR
-# =========================================================
-
 st.sidebar.title("🏭 Factory AI")
 
-menu = st.sidebar.radio(
-    "Navigation",
-    [
-        "Owner Dashboard",
-        "Factory Setup",
-        "New Customer Order",
-        "📤 Send to Production",
-        "📤 Send to Store",
-        "📤 Send to Dispatch",
-        "Material Receiving",
-        "Raw Material Stock",
-        "Production Planning",
-        "Production Line",
-        "Store Verification",
-        "Loading & Dispatch",
-        "Order Balance & Closure",
-        "Daily Factory Report",
-        "Bills & Documents",
-    ]
-)
+menu = st.sidebar.radio("Navigation", [
+    "Owner Dashboard", "Factory Setup", "New Customer Order",
+    "📤 Send to Production", "📤 Send to Store", "📤 Send to Dispatch",
+    "Material Receiving", "Raw Material Stock",
+    "🏭 Daily Production", "Production Line",
+    "Store Verification", "Loading & Dispatch",
+    "Order Balance & Closure", "Daily Factory Report", "Bills & Documents",
+])
 
 st.sidebar.divider()
 
 if st.sidebar.button("🗑️ Reset Demo Data"):
     clear_all_demo_data()
-    st.success("All factory demo data has been cleared.")
+    st.success("All demo data cleared.")
     st.rerun()
 
 if get_app_password() and st.sidebar.button("🚪 Log Out"):
@@ -466,33 +389,24 @@ if menu == "Owner Dashboard":
     st.subheader("📋 Current Orders")
 
     if not st.session_state.orders:
-        st.info("No customer orders yet. Go to 'New Customer Order' to create the first order.")
+        st.info("No customer orders yet.")
     else:
         rows = []
         for order in st.session_state.orders:
-            for idx, (line_id, item) in enumerate(line_items(order), start=1):
+            for idx, (line_id, item) in enumerate(line_items(order), 1):
                 job = get_job(line_id)
                 rows.append({
-                    "Order": order["id"],
-                    "Item #": idx,
+                    "Order": order["id"], "Item #": idx,
                     "Customer": order["customer"],
-                    "Product": item["product"],
-                    "Size": item["size"],
+                    "Product": item["product"], "Size": item["size"],
                     "Order KG": item["quantity"],
                     "Balance KG": line_balance(item, line_id),
-                    "Production Line": job.get("line", "-") if job else "-",
+                    "Line": job.get("line", "-") if job else "-",
                     "Team": job.get("team", "-") if job else "-",
                     "Status": line_status(item, line_id),
                     "Priority": order.get("priority", "Normal"),
                 })
         st.dataframe(rows, use_container_width=True, hide_index=True)
-
-    if active_jobs:
-        st.warning(f"⚙️ {len(active_jobs)} production job(s) are currently active.")
-    if store_pending:
-        st.warning(f"📦 {store_pending} production job(s) waiting for store verification.")
-    if loading_ready > 0:
-        st.success(f"🚚 {loading_ready:,.2f} KG is ready for loading.")
 
 
 # =========================================================
@@ -501,37 +415,21 @@ if menu == "Owner Dashboard":
 
 elif menu == "Factory Setup":
     st.header("⚙️ Factory Setup")
-    st.write("Configure your factory lines, teams, products and WhatsApp contacts.")
 
     st.subheader("📱 WhatsApp Contacts")
-    st.caption("Include country code. Example: 919876543210 (India +91).")
+    st.caption("With country code. Example: 919876543210")
 
     c1, c2, c3 = st.columns(3)
     st.session_state.production_manager_phone = c1.text_input(
-        "Production Manager WhatsApp",
-        value=st.session_state.production_manager_phone,
-        placeholder="919876543210",
-    )
+        "Production Manager", value=st.session_state.production_manager_phone, placeholder="919876543210")
     st.session_state.store_manager_phone = c2.text_input(
-        "Store Manager WhatsApp",
-        value=st.session_state.store_manager_phone,
-        placeholder="919876543210",
-    )
+        "Store Manager", value=st.session_state.store_manager_phone, placeholder="919876543210")
     st.session_state.dispatch_manager_phone = c3.text_input(
-        "Dispatch Manager WhatsApp",
-        value=st.session_state.dispatch_manager_phone,
-        placeholder="919876543210",
-    )
+        "Dispatch Manager", value=st.session_state.dispatch_manager_phone, placeholder="919876543210")
 
     st.divider()
-
-    st.subheader("Production Lines")
     lines_text = st.text_area("Production Lines", value="\n".join(st.session_state.factory_lines), height=150)
-
-    st.subheader("Production Teams")
     teams_text = st.text_area("Production Teams", value="\n".join(st.session_state.factory_teams), height=150)
-
-    st.subheader("Products")
     products_text = st.text_area("Products", value="\n".join(st.session_state.factory_products), height=150)
 
     if st.button("💾 Save Factory Setup", type="primary"):
@@ -539,7 +437,7 @@ elif menu == "Factory Setup":
         st.session_state.factory_teams = [x.strip() for x in teams_text.splitlines() if x.strip()]
         st.session_state.factory_products = [x.strip() for x in products_text.splitlines() if x.strip()]
         save_data()
-        st.success("Factory setup saved.")
+        st.success("Saved.")
 
 
 # =========================================================
@@ -550,39 +448,23 @@ elif menu == "New Customer Order":
     st.header("📝 New Customer Order")
 
     last = st.session_state.get("last_created_order")
-
     if last:
-        st.success(f"✅ Order {last['id']} created successfully for {last['customer']}.")
+        st.success(f"✅ Order {last['id']} created for {last['customer']}.")
 
-        pm_phone = st.session_state.get("production_manager_phone", "").strip()
-        sm_phone = st.session_state.get("store_manager_phone", "").strip()
-        dm_phone = st.session_state.get("dispatch_manager_phone", "").strip()
+        pm = st.session_state.get("production_manager_phone", "").strip()
+        sm = st.session_state.get("store_manager_phone", "").strip()
+        dm = st.session_state.get("dispatch_manager_phone", "").strip()
 
-        if pm_phone:
-            st.link_button(
-                "📱 Send Order to Production Manager via WhatsApp",
-                build_whatsapp_link(pm_phone, order_whatsapp_text(last)),
-                type="primary",
-            )
-        else:
-            st.info("Set the Production Manager's WhatsApp number in Factory Setup to enable one-tap sharing.")
+        if pm:
+            st.link_button("📱 Send to Production Manager", wa_link(pm, order_wa_text(last)), type="primary")
+        if sm:
+            st.link_button("📦 Send to Store Manager", wa_link(sm, store_wa_text(last)))
+        if dm:
+            st.link_button("🚚 Send to Dispatch Manager", wa_link(dm, dispatch_wa_text(last)))
 
-        if sm_phone:
-            st.link_button(
-                "📦 Send Order to Store Manager via WhatsApp",
-                build_whatsapp_link(sm_phone, store_whatsapp_text(last)),
-            )
-
-        if dm_phone:
-            st.link_button(
-                "🚚 Send Order to Dispatch Manager via WhatsApp",
-                build_whatsapp_link(dm_phone, dispatch_whatsapp_text(last)),
-            )
-
-        if st.button("✖ Close this message and create another order"):
+        if st.button("✖ Close and create another"):
             st.session_state.pop("last_created_order", None)
             st.rerun()
-
         st.divider()
 
     c1, c2 = st.columns(2)
@@ -592,66 +474,54 @@ elif menu == "New Customer Order":
     c3, c4 = st.columns(2)
     priority = c3.selectbox("Priority", ["Normal", "High", "Urgent"])
     pickup_date = c4.date_input("Required / Pickup Date", value=date.today())
-
     remarks = st.text_area("Order Remarks")
 
     st.subheader("📦 Order Items")
-    st.caption(
-        "One order can contain multiple products, sizes or specifications. "
-        "Click the ➕ row at the bottom of the table to add a line."
-    )
+    st.caption("Add as many products/sizes as needed. Click ➕ at the bottom of the table.")
 
     if "new_order_items_df" not in st.session_state:
         st.session_state.new_order_items_df = pd.DataFrame([
             {"product": st.session_state.factory_products[0], "size": "", "quantity": 0.0, "rate": 0.0}
         ])
 
-    edited_df = st.data_editor(
+    edited = st.data_editor(
         st.session_state.new_order_items_df,
-        num_rows="dynamic",
-        use_container_width=True,
+        num_rows="dynamic", use_container_width=True,
         column_config={
-            "product": st.column_config.SelectboxColumn(
-                "Product", options=st.session_state.factory_products, required=True
-            ),
+            "product": st.column_config.SelectboxColumn("Product", options=st.session_state.factory_products, required=True),
             "size": st.column_config.TextColumn("Size / Spec", required=True),
             "quantity": st.column_config.NumberColumn("Qty KG", min_value=0.0, format="%.2f"),
             "rate": st.column_config.NumberColumn("Rate ₹/KG", min_value=0.0, format="%.2f"),
         },
         key="new_order_items_editor",
     )
-    st.session_state.new_order_items_df = edited_df
-
-    st.divider()
+    st.session_state.new_order_items_df = edited
 
     if st.button("✅ Create Customer Order", type="primary"):
-        valid_items = []
-        for _, row in edited_df.iterrows():
-            p = str(row.get("product", "") or "").strip()
-            s = str(row.get("size", "") or "").strip()
+        valid = []
+        for _, row in edited.iterrows():
+            p = str(row.get("product") or "").strip()
+            s = str(row.get("size") or "").strip()
             try:
-                q = float(row.get("quantity", 0) or 0)
-                r = float(row.get("rate", 0) or 0)
+                q = float(row.get("quantity") or 0)
+                r = float(row.get("rate") or 0)
             except (TypeError, ValueError):
                 q, r = 0.0, 0.0
             if p and s and q > 0:
-                valid_items.append({"product": p, "size": s, "quantity": q, "rate": r})
+                valid.append({"product": p, "size": s, "quantity": q, "rate": r})
 
         if not customer.strip():
             st.error("Customer name is required.")
-        elif not valid_items:
-            st.error("At least one item with product, size, and quantity > 0 is required.")
+        elif not valid:
+            st.error("At least one valid item required.")
         else:
-            order_number = f"ORD-{st.session_state.next_order}"
+            oid = f"ORD-{st.session_state.next_order}"
             order = {
-                "id": order_number,
-                "customer": customer.strip(),
-                "contact": contact.strip(),
-                "priority": priority,
-                "pickup_date": str(pickup_date),
+                "id": oid, "customer": customer.strip(), "contact": contact.strip(),
+                "priority": priority, "pickup_date": str(pickup_date),
                 "remarks": remarks.strip(),
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "items": valid_items,
+                "items": valid,
             }
             st.session_state.orders.append(order)
             st.session_state.next_order += 1
@@ -665,107 +535,55 @@ elif menu == "New Customer Order":
 
 
 # =========================================================
-# SEND TO PRODUCTION (WhatsApp)
+# SEND TO PRODUCTION / STORE / DISPATCH
 # =========================================================
 
 elif menu == "📤 Send to Production":
     st.header("📤 Send Orders to Production Manager")
-
     phone = st.session_state.get("production_manager_phone", "").strip()
 
     if not phone:
-        st.warning("Add the Production Manager's WhatsApp number in **Factory Setup** first.")
+        st.warning("Set the Production Manager WhatsApp number in Factory Setup.")
     elif not st.session_state.orders:
-        st.info("No customer orders yet. Create one first.")
+        st.info("No orders yet.")
     else:
-        st.caption(
-            "Tap the button for the order you want to send. "
-            "WhatsApp will open with the full order pre-filled — just press Send."
-        )
-
         for order in reversed(st.session_state.orders):
-            with st.expander(
-                f"{order['id']} | {order['customer']} | "
-                f"{len(order.get('items', []))} item(s) | "
-                f"{order.get('priority', 'Normal')}"
-            ):
-                preview = order_whatsapp_text(order)
+            with st.expander(f"{order['id']} | {order['customer']}"):
+                preview = order_wa_text(order)
                 st.code(preview, language="text")
+                st.link_button("📱 Open WhatsApp", wa_link(phone, preview), type="primary")
 
-                st.link_button(
-                    "📱 Open WhatsApp with this order",
-                    build_whatsapp_link(phone, preview),
-                    type="primary",
-                )
-
-
-# =========================================================
-# SEND TO STORE (WhatsApp)
-# =========================================================
 
 elif menu == "📤 Send to Store":
     st.header("📦 Send Orders to Store Manager")
-
     phone = st.session_state.get("store_manager_phone", "").strip()
 
     if not phone:
-        st.warning("Add the Store Manager's WhatsApp number in **Factory Setup** first.")
+        st.warning("Set the Store Manager WhatsApp number in Factory Setup.")
     elif not st.session_state.orders:
-        st.info("No customer orders yet. Create one first.")
+        st.info("No orders yet.")
     else:
-        st.caption(
-            "Tap the button for the order you want to send. "
-            "WhatsApp will open with the full order pre-filled — just press Send."
-        )
-
         for order in reversed(st.session_state.orders):
-            with st.expander(
-                f"{order['id']} | {order['customer']} | "
-                f"{len(order.get('items', []))} item(s)"
-            ):
-                preview = store_whatsapp_text(order)
+            with st.expander(f"{order['id']} | {order['customer']}"):
+                preview = store_wa_text(order)
                 st.code(preview, language="text")
+                st.link_button("📦 Open WhatsApp", wa_link(phone, preview), type="primary")
 
-                st.link_button(
-                    "📦 Open WhatsApp with this order",
-                    build_whatsapp_link(phone, preview),
-                    type="primary",
-                )
-
-
-# =========================================================
-# SEND TO DISPATCH (WhatsApp)
-# =========================================================
 
 elif menu == "📤 Send to Dispatch":
     st.header("🚚 Send Orders to Dispatch Manager")
-
     phone = st.session_state.get("dispatch_manager_phone", "").strip()
 
     if not phone:
-        st.warning("Add the Dispatch Manager's WhatsApp number in **Factory Setup** first.")
+        st.warning("Set the Dispatch Manager WhatsApp number in Factory Setup.")
     elif not st.session_state.orders:
-        st.info("No customer orders yet. Create one first.")
+        st.info("No orders yet.")
     else:
-        st.caption(
-            "Each message shows the verified stock ready to dispatch per item. "
-            "Tap the button, WhatsApp opens pre-filled — just press Send."
-        )
-
         for order in reversed(st.session_state.orders):
-            with st.expander(
-                f"{order['id']} | {order['customer']} | "
-                f"{len(order.get('items', []))} item(s) | "
-                f"{order.get('priority', 'Normal')}"
-            ):
-                preview = dispatch_whatsapp_text(order)
+            with st.expander(f"{order['id']} | {order['customer']}"):
+                preview = dispatch_wa_text(order)
                 st.code(preview, language="text")
-
-                st.link_button(
-                    "🚚 Open WhatsApp with this order",
-                    build_whatsapp_link(phone, preview),
-                    type="primary",
-                )
+                st.link_button("🚚 Open WhatsApp", wa_link(phone, preview), type="primary")
 
 
 # =========================================================
@@ -775,48 +593,41 @@ elif menu == "📤 Send to Dispatch":
 elif menu == "Material Receiving":
     st.header("📥 Raw Material Receiving")
 
-    with st.form("material_receiving"):
+    with st.form("mat_recv"):
         c1, c2 = st.columns(2)
         supplier = c1.text_input("Supplier")
-        material = c2.text_input("Raw Material / Grade", placeholder="Example: MS Billet")
+        material = c2.text_input("Material / Grade", placeholder="MS Billet")
 
         c3, c4 = st.columns(2)
-        grn = c3.text_input("GRN / Receipt Number")
-        vehicle = c4.text_input("Vehicle Number")
+        grn = c3.text_input("GRN / Receipt No")
+        vehicle = c4.text_input("Vehicle No")
 
         c5, c6, c7 = st.columns(3)
-        quantity = c5.number_input("Received Quantity KG", min_value=0.0, step=100.0)
-        rate = c6.number_input("Purchase Rate ₹ / KG", min_value=0.0, step=1.0)
-        receiving_date = c7.date_input("Receiving Date", value=date.today())
+        qty = c5.number_input("Quantity KG", min_value=0.0, step=100.0)
+        rate = c6.number_input("Rate ₹/KG", min_value=0.0, step=1.0)
+        rdate = c7.date_input("Date", value=date.today())
 
         received_by = st.text_input("Received By")
-        location = st.text_input("Storage Location")
+        location = st.text_input("Location")
         remarks = st.text_area("Remarks")
+        ok = st.form_submit_button("📥 Receive Material")
 
-        submitted = st.form_submit_button("📥 Receive Material")
-
-    if submitted:
+    if ok:
         if not material.strip():
-            st.error("Enter raw material / grade.")
-        elif quantity <= 0:
-            st.error("Quantity must be greater than zero.")
+            st.error("Material required.")
+        elif qty <= 0:
+            st.error("Quantity must be > 0.")
         else:
             st.session_state.raw_receipts.append({
-                "supplier": supplier.strip(),
-                "material": material.strip(),
-                "grn": grn.strip(),
-                "vehicle": vehicle.strip(),
-                "quantity": quantity,
-                "rate": rate,
-                "value": quantity * rate,
-                "date": str(receiving_date),
-                "received_by": received_by.strip(),
-                "location": location.strip(),
-                "remarks": remarks.strip(),
+                "supplier": supplier.strip(), "material": material.strip(),
+                "grn": grn.strip(), "vehicle": vehicle.strip(),
+                "quantity": qty, "rate": rate, "value": qty * rate,
+                "date": str(rdate), "received_by": received_by.strip(),
+                "location": location.strip(), "remarks": remarks.strip(),
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             })
             save_data()
-            st.success(f"{quantity:,.2f} KG received successfully.")
+            st.success(f"{qty:,.2f} KG received.")
 
 
 # =========================================================
@@ -825,92 +636,160 @@ elif menu == "Material Receiving":
 
 elif menu == "Raw Material Stock":
     st.header("📦 Raw Material Stock")
+    ms = raw_materials()
 
-    materials = raw_materials()
-
-    if not materials:
-        st.info("No raw material has been received yet.")
+    if not ms:
+        st.info("No raw material yet.")
     else:
-        rows = []
-        for material in materials:
-            rows.append({
-                "Material / Grade": material,
-                "Received KG": raw_received(material),
-                "Consumed KG": raw_consumed(material),
-                "Available KG": raw_available(material),
-            })
+        rows = [{"Material": m, "Received KG": raw_received(m),
+                 "Consumed KG": raw_consumed(m), "Available KG": raw_available(m)} for m in ms]
         st.dataframe(rows, use_container_width=True, hide_index=True)
-
-        st.subheader("Material Receiving History")
+        st.subheader("Receiving History")
         st.dataframe(st.session_state.raw_receipts, use_container_width=True, hide_index=True)
 
 
 # =========================================================
-# PRODUCTION PLANNING
+# DAILY PRODUCTION
 # =========================================================
 
-elif menu == "Production Planning":
-    st.header("📋 Production Planning")
+elif menu == "🏭 Daily Production":
+    st.header("🏭 Daily Production Plan")
+    today_str = date.today().strftime("%d %b %Y")
+    st.caption(f"Today: **{today_str}** — plan production and send to Production Manager.")
 
-    if not st.session_state.orders:
-        st.info("Create a customer order first.")
+    pending = pending_production_items()
+
+    # ---- Section A: from customer orders ----
+    st.subheader("📋 A. From Customer Orders")
+    st.caption("Edit **Make Today KG** to produce more or less than the required balance. "
+               "Untick items you don't want to produce today.")
+
+    if not pending:
+        st.info("No pending order items. Use Section B below to plan stock production.")
+        order_selected = pd.DataFrame()
     else:
-        for order in st.session_state.orders:
-            with st.expander(
-                f"{order['id']} | {order['customer']} | "
-                f"{len(order.get('items', []))} item(s) | "
-                f"Balance {order_balance(order):,.2f} KG"
-            ):
-                st.caption(
-                    f"Created: {order.get('created_at', '-')} | "
-                    f"Priority: {order.get('priority', 'Normal')} | "
-                    f"Pickup: {order.get('pickup_date', '-')}"
-                )
+        sig = tuple(sorted((p["line_id"], p["has_job"]) for p in pending))
+        if st.session_state.get("dp_order_sig") != sig or "dp_order_df" not in st.session_state:
+            rows = []
+            for p in pending:
+                rows.append({
+                    "Include": not p["has_job"],
+                    "Product": p["item"]["product"],
+                    "Size": p["item"]["size"],
+                    "Order": p["order"]["id"],
+                    "Customer": p["order"]["customer"],
+                    "Priority": p["order"].get("priority", "Normal"),
+                    "Required KG": float(p["production_required"]),
+                    "Make Today KG": float(p["production_required"]),
+                    "Status": "🆕 No Job" if not p["has_job"] else f"⚙️ {p['job_status']}",
+                    "_line_id": p["line_id"],
+                })
+            st.session_state.dp_order_df = pd.DataFrame(rows)
+            st.session_state.dp_order_sig = sig
 
-                for idx, (line_id, item) in enumerate(line_items(order), start=1):
-                    st.markdown(f"**Item {idx} — {item['product']} | {item['size']}**")
+        order_ed = st.data_editor(
+            st.session_state.dp_order_df,
+            hide_index=True, use_container_width=True,
+            disabled=["Product", "Size", "Order", "Customer", "Priority", "Required KG", "Status", "_line_id"],
+            column_config={
+                "Include": st.column_config.CheckboxColumn("Include", default=True),
+                "Required KG": st.column_config.NumberColumn(format="%.2f"),
+                "Make Today KG": st.column_config.NumberColumn("Make Today KG", min_value=0.0, format="%.2f"),
+                "_line_id": st.column_config.TextColumn("Line ID"),
+            },
+            key="dp_order_editor",
+        )
+        st.session_state.dp_order_df = order_ed
+        order_selected = order_ed[(order_ed["Include"] == True) & (order_ed["Make Today KG"] > 0)].copy()
 
-                    available_stock = available_finished_stock(item["product"], item["size"])
-                    bal = line_balance(item, line_id)
-                    production_required = max(0, bal - available_stock)
+    st.divider()
 
-                    c1, c2, c3, c4 = st.columns(4)
-                    c1.metric("Order Qty", f"{item['quantity']:,.2f} KG")
-                    c2.metric("Ready Stock", f"{available_stock:,.2f} KG")
-                    c3.metric("Balance", f"{bal:,.2f} KG")
-                    c4.metric("Production Required", f"{production_required:,.2f} KG")
+    # ---- Section B: extra stock production ----
+    st.subheader("➕ B. Extra Production (for Stock)")
+    st.caption("Add any sizes not linked to customer orders. These go in the WhatsApp plan only "
+               "(no tracked jobs created).")
 
-                    job = get_job(line_id)
+    if "dp_extra_df" not in st.session_state:
+        st.session_state.dp_extra_df = pd.DataFrame([
+            {"Product": st.session_state.factory_products[0], "Size": "", "Qty KG": 0.0}
+        ])
 
-                    if job:
-                        st.info(
-                            f"Production job exists | {job.get('line', '-')} | "
-                            f"{job.get('team', '-')} | {job.get('status', '-')}"
-                        )
-                    elif production_required > 0:
-                        if st.button(f"⚙️ Create Production Job for {line_id}", key=f"create_job_{line_id}"):
-                            st.session_state.production_jobs.append({
-                                "line_id": line_id,
-                                "order_id": order["id"],
-                                "product": item["product"],
-                                "size": item["size"],
-                                "required": production_required,
-                                "finished": 0.0,
-                                "wastage": 0.0,
-                                "damage": 0.0,
-                                "scrap": 0.0,
-                                "line": "",
-                                "team": "",
-                                "status": "PLANNED",
-                                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            })
-                            save_data()
-                            st.success("Production job created.")
-                            st.rerun()
-                    else:
-                        st.success("No new production required. Existing verified stock can cover this line.")
+    extra_ed = st.data_editor(
+        st.session_state.dp_extra_df,
+        num_rows="dynamic", use_container_width=True,
+        column_config={
+            "Product": st.column_config.SelectboxColumn("Product", options=st.session_state.factory_products),
+            "Size": st.column_config.TextColumn("Size"),
+            "Qty KG": st.column_config.NumberColumn("Qty KG", min_value=0.0, format="%.2f"),
+        },
+        key="dp_extra_editor",
+    )
+    st.session_state.dp_extra_df = extra_ed
+    extra_selected = extra_ed[extra_ed["Qty KG"] > 0].copy()
 
-                    st.divider()
+    st.divider()
+
+    # ---- Preview + actions ----
+    if order_selected.empty and extra_selected.empty:
+        st.info("👆 Tick items in Section A or add quantities in Section B to build the plan.")
+    else:
+        lines = ["🏭 DAILY PRODUCTION PLAN", f"Date: {today_str}", ""]
+        total = 0.0
+
+        if not order_selected.empty:
+            lines.append("FROM CUSTOMER ORDERS:")
+            for _, r in order_selected.iterrows():
+                lines.append(f"• {r['Product']} | {r['Size']} | {r['Make Today KG']:,.2f} KG | {r['Order']} ({r['Customer']}) | {r['Priority']}")
+                total += float(r["Make Today KG"])
+            lines.append("")
+
+        if not extra_selected.empty:
+            lines.append("EXTRA STOCK PRODUCTION:")
+            for _, r in extra_selected.iterrows():
+                lines.append(f"• {r['Product']} | {r['Size']} | {r['Qty KG']:,.2f} KG")
+                total += float(r["Qty KG"])
+            lines.append("")
+
+        lines += [f"Total: {total:,.2f} KG", "", "Please confirm line and team."]
+        preview = "\n".join(lines)
+
+        st.subheader(f"📱 Preview — Total {total:,.2f} KG")
+        st.code(preview, language="text")
+
+        c1, c2 = st.columns(2)
+
+        with c1:
+            if not order_selected.empty:
+                if st.button("⚙️ Create Production Jobs (Order Items)", type="primary", use_container_width=True):
+                    created = skipped = 0
+                    for _, r in order_selected.iterrows():
+                        lid = r["_line_id"]
+                        if not lid:
+                            continue
+                        if get_job(lid):
+                            skipped += 1
+                            continue
+                        st.session_state.production_jobs.append({
+                            "line_id": lid, "order_id": r["Order"],
+                            "product": r["Product"], "size": r["Size"],
+                            "required": float(r["Make Today KG"]),
+                            "finished": 0.0, "wastage": 0.0, "damage": 0.0, "scrap": 0.0,
+                            "line": "", "team": "", "status": "PLANNED",
+                            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        })
+                        created += 1
+                    save_data()
+                    st.success(f"Created {created} job(s). Skipped {skipped}. Go to Production Line.")
+                    st.rerun()
+            else:
+                st.info("Tracked jobs are created only for order items.")
+
+        with c2:
+            pm = st.session_state.get("production_manager_phone", "").strip()
+            if pm:
+                st.link_button("📱 Send Plan via WhatsApp", wa_link(pm, preview), type="primary", use_container_width=True)
+            else:
+                st.warning("Set Production Manager WhatsApp in Factory Setup.")
 
 
 # =========================================================
@@ -920,121 +799,97 @@ elif menu == "Production Planning":
 elif menu == "Production Line":
     st.header("🏭 Production Line Control")
 
-    jobs = st.session_state.production_jobs
-
-    if not jobs:
-        st.info("No production jobs yet. Create one from Production Planning.")
+    if not st.session_state.production_jobs:
+        st.info("No jobs yet. Create from Daily Production.")
     else:
-        for index, job in enumerate(jobs):
-            order = next((x for x in st.session_state.orders if x["id"] == job["order_id"]), None)
+        for i, job in enumerate(st.session_state.production_jobs):
+            order = next((o for o in st.session_state.orders if o["id"] == job["order_id"]), None)
             if not order:
                 continue
 
-            with st.expander(
-                f"{job['line_id']} | {order['customer']} | "
-                f"{job['product']} | {job['size']} | {job['status']}"
-            ):
+            with st.expander(f"{job['line_id']} | {order['customer']} | {job['product']} | {job['status']}"):
                 c1, c2, c3, c4 = st.columns(4)
                 c1.metric("Required", f"{job['required']:,.2f} KG")
                 c2.metric("Produced", f"{job['finished']:,.2f} KG")
                 c3.metric("Wastage", f"{job['wastage']:,.2f} KG")
                 c4.metric("Damage", f"{job['damage']:,.2f} KG")
 
-                line = st.selectbox("Production Line", st.session_state.factory_lines, key=f"line_{index}")
-                team = st.selectbox("Production Team", st.session_state.factory_teams, key=f"team_{index}")
+                line = st.selectbox("Line", st.session_state.factory_lines, key=f"line_{i}")
+                team = st.selectbox("Team", st.session_state.factory_teams, key=f"team_{i}")
 
-                material_list = raw_materials()
-                if not material_list:
-                    st.warning("No raw material available. Receive raw material first.")
+                if not raw_materials():
+                    st.warning("Receive raw material first.")
                     continue
 
-                material = st.selectbox("Raw Material", material_list, key=f"material_{index}")
-                available_raw = raw_available(material)
-                st.caption(f"Available raw material: {available_raw:,.2f} KG")
+                material = st.selectbox("Raw Material", raw_materials(), key=f"mat_{i}")
+                avail = raw_available(material)
+                st.caption(f"Available: {avail:,.2f} KG")
 
                 c5, c6 = st.columns(2)
-                raw_input = c5.number_input("Raw Material Input KG", min_value=0.0, max_value=max(available_raw, 0.0), step=100.0, key=f"raw_{index}")
-                finished = c6.number_input("Finished Output KG", min_value=0.0, step=100.0, key=f"finished_{index}")
+                raw_in = c5.number_input("Raw Input KG", min_value=0.0, max_value=max(avail, 0.0), step=100.0, key=f"raw_{i}")
+                finished = c6.number_input("Finished KG", min_value=0.0, step=100.0, key=f"fin_{i}")
 
                 c7, c8, c9 = st.columns(3)
-                wastage = c7.number_input("Wastage KG", min_value=0.0, step=1.0, key=f"waste_{index}")
-                damage = c8.number_input("Damage KG", min_value=0.0, step=1.0, key=f"damage_{index}")
-                scrap = c9.number_input("Reusable Scrap KG", min_value=0.0, step=1.0, key=f"scrap_{index}")
+                waste = c7.number_input("Wastage KG", min_value=0.0, step=1.0, key=f"wst_{i}")
+                damage = c8.number_input("Damage KG", min_value=0.0, step=1.0, key=f"dmg_{i}")
+                scrap = c9.number_input("Scrap KG", min_value=0.0, step=1.0, key=f"scr_{i}")
 
-                material_rate = st.number_input("Material Cost ₹ / KG", min_value=0.0, step=1.0, key=f"rate_{index}")
+                mat_rate = st.number_input("Material ₹/KG", min_value=0.0, step=1.0, key=f"mrt_{i}")
 
-                if st.button("▶️ Record Production", key=f"produce_{index}"):
+                if st.button("▶️ Record Production", key=f"rec_{i}"):
                     if finished <= 0:
-                        st.error("Finished output must be greater than zero.")
-                    elif raw_input <= 0:
-                        st.error("Raw material input must be greater than zero.")
-                    elif raw_input > available_raw:
-                        st.error("Insufficient raw material stock.")
-                    elif finished + wastage + damage + scrap > raw_input + 0.0001:
-                        st.error("Finished + wastage + damage + scrap cannot exceed raw input.")
+                        st.error("Finished must be > 0.")
+                    elif raw_in <= 0:
+                        st.error("Raw input must be > 0.")
+                    elif raw_in > avail:
+                        st.error("Insufficient raw material.")
+                    elif finished + waste + damage + scrap > raw_in + 0.0001:
+                        st.error("Output sum > raw input.")
                     else:
-                        remaining_required = max(0, job["required"] - job["finished"])
-                        if finished > remaining_required:
-                            st.error(f"Finished output cannot exceed remaining requirement of {remaining_required:,.2f} KG.")
+                        rem = max(0, job["required"] - job["finished"])
+                        if finished > rem:
+                            st.error(f"Max {rem:,.2f} KG remaining.")
                         else:
                             job["line"] = line
                             job["team"] = team
                             job["finished"] += finished
-                            job["wastage"] += wastage
+                            job["wastage"] += waste
                             job["damage"] += damage
                             job["scrap"] += scrap
-
-                            if job["finished"] >= job["required"]:
-                                job["status"] = "READY FOR STORE VERIFICATION"
-                            else:
-                                job["status"] = "IN PRODUCTION"
+                            job["status"] = "READY FOR STORE VERIFICATION" if job["finished"] >= job["required"] else "IN PRODUCTION"
 
                             st.session_state.material_consumption.append({
-                                "line_id": job["line_id"],
-                                "order_id": job["order_id"],
-                                "product": job["product"],
-                                "size": job["size"],
-                                "material": material,
-                                "raw_input": raw_input,
-                                "finished": finished,
-                                "wastage": wastage,
-                                "damage": damage,
-                                "scrap": scrap,
-                                "material_rate": material_rate,
-                                "material_cost": raw_input * material_rate,
-                                "line": line,
-                                "team": team,
-                                "date": str(date.today()),
+                                "line_id": job["line_id"], "order_id": job["order_id"],
+                                "product": job["product"], "size": job["size"],
+                                "material": material, "raw_input": raw_in, "finished": finished,
+                                "wastage": waste, "damage": damage, "scrap": scrap,
+                                "material_rate": mat_rate, "material_cost": raw_in * mat_rate,
+                                "line": line, "team": team, "date": str(date.today()),
                                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             })
-
                             save_data()
-                            st.success(f"{finished:,.2f} KG production recorded.")
+                            st.success(f"{finished:,.2f} KG recorded.")
                             st.rerun()
 
                 st.divider()
-                st.subheader("👷 Labour Entry")
+                st.subheader("👷 Labour")
 
                 c10, c11, c12 = st.columns(3)
-                worker = c10.text_input("Worker / Operator", key=f"worker_{index}")
-                hours = c11.number_input("Hours", min_value=0.0, step=1.0, key=f"hours_{index}")
-                hourly_rate = c12.number_input("Rate ₹ / Hour", min_value=0.0, step=10.0, key=f"hourly_{index}")
+                worker = c10.text_input("Worker", key=f"w_{i}")
+                hours = c11.number_input("Hours", min_value=0.0, step=1.0, key=f"h_{i}")
+                hourly = c12.number_input("₹/Hour", min_value=0.0, step=10.0, key=f"hr_{i}")
 
-                if st.button("👷 Add Labour Cost", key=f"labour_{index}"):
+                if st.button("👷 Add Labour", key=f"lb_{i}"):
                     if worker.strip() and hours > 0:
                         st.session_state.labour_entries.append({
-                            "line_id": job["line_id"],
-                            "order_id": job["order_id"],
-                            "worker": worker.strip(),
-                            "hours": hours,
-                            "rate": hourly_rate,
-                            "cost": hours * hourly_rate,
-                            "date": str(date.today()),
+                            "line_id": job["line_id"], "order_id": job["order_id"],
+                            "worker": worker.strip(), "hours": hours, "rate": hourly,
+                            "cost": hours * hourly, "date": str(date.today()),
                         })
                         save_data()
-                        st.success("Labour cost added.")
+                        st.success("Labour added.")
                     else:
-                        st.error("Enter worker name and hours.")
+                        st.error("Worker + hours required.")
 
 
 # =========================================================
@@ -1043,50 +898,44 @@ elif menu == "Production Line":
 
 elif menu == "Store Verification":
     st.header("📦 Store Verification")
+    st.caption("⚠️ **Production Ready ≠ Dispatch Ready.** Only verified quantity is dispatchable.")
 
     jobs = production_jobs_waiting_store()
 
     if not jobs:
-        st.info("No completed production is waiting for store verification.")
+        st.info("No production waiting for verification.")
     else:
-        for index, job in enumerate(jobs):
-            with st.expander(
-                f"{job['line_id']} | {job['product']} | {job['size']} | {job['finished']:,.2f} KG"
-            ):
-                quantity = st.number_input(
-                    "Physical Verified Quantity KG",
-                    min_value=0.0,
-                    max_value=float(job["finished"]),
-                    value=float(job["finished"]),
-                    key=f"verify_qty_{index}",
-                )
-                location = st.text_input("Finished Goods Location", key=f"verify_location_{index}")
-                verifier = st.text_input("Verified By", key=f"verifier_{index}")
-                notes = st.text_area("Verification Notes", key=f"verify_notes_{index}")
+        for i, job in enumerate(jobs):
+            with st.expander(f"{job['line_id']} | {job['product']} | {job['size']} | {job['finished']:,.2f} KG"):
+                qty = st.number_input("Physical Verified KG", min_value=0.0,
+                                      max_value=float(job["finished"]),
+                                      value=float(job["finished"]), key=f"vq_{i}")
+                loc = st.text_input("Location", key=f"vl_{i}")
+                ver = st.text_input("Verified By", key=f"vb_{i}")
+                notes = st.text_area("Notes", key=f"vn_{i}")
 
-                if st.button("✅ Verify & Move to Finished Stock", key=f"verify_{index}"):
-                    if quantity <= 0:
-                        st.error("Verified quantity must be greater than zero.")
+                if st.button("✅ Verify & Move to Finished Stock", key=f"v_{i}"):
+                    if qty <= 0:
+                        st.error("Quantity must be > 0.")
                     else:
+                        shortfall = job["finished"] - qty
                         st.session_state.store_verifications.append({
-                            "line_id": job["line_id"],
-                            "order_id": job["order_id"],
-                            "product": job["product"],
-                            "size": job["size"],
+                            "line_id": job["line_id"], "order_id": job["order_id"],
+                            "product": job["product"], "size": job["size"],
                             "product_key": product_key(job["product"], job["size"]),
-                            "quantity": quantity,
-                            "location": location.strip(),
-                            "verifier": verifier.strip(),
-                            "notes": notes.strip(),
+                            "quantity": qty, "location": loc.strip(),
+                            "verifier": ver.strip(), "notes": notes.strip(),
                             "date": str(date.today()),
                             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         })
-                        if quantity >= job["finished"]:
-                            job["status"] = "VERIFIED"
-                        else:
-                            job["status"] = "PARTIALLY VERIFIED"
+                        job["status"] = "VERIFIED" if qty >= job["finished"] else "PARTIALLY VERIFIED"
                         save_data()
-                        st.success(f"{quantity:,.2f} KG moved to finished goods stock.")
+
+                        if shortfall > 0:
+                            st.warning(f"⚠️ Verified {qty:,.2f} KG vs claimed {job['finished']:,.2f} KG. "
+                                       f"Shortfall of {shortfall:,.2f} KG.")
+                        else:
+                            st.success(f"{qty:,.2f} KG verified.")
                         st.rerun()
 
 
@@ -1100,126 +949,82 @@ elif menu == "Loading & Dispatch":
     queue = dispatch_queue()
 
     if not queue:
-        st.info("No finished goods are currently ready for dispatch.")
+        st.info("No verified stock ready for dispatch.")
     else:
-        for index, entry in enumerate(queue):
-            order = entry["order"]
-            item = entry["item"]
-            line_id = entry["line_id"]
-            ready = entry["ready"]
-            job = get_job(line_id)
-
-            with st.expander(
-                f"{line_id} | {order['customer']} | "
-                f"{item['product']} | {item['size']} | Ready {ready:,.2f} KG"
-            ):
+        for i, entry in enumerate(queue):
+            order, item, lid, ready = entry["order"], entry["item"], entry["line_id"], entry["ready"]
+            with st.expander(f"{lid} | {order['customer']} | {item['product']} | {item['size']} | Ready {ready:,.2f} KG"):
                 c1, c2, c3, c4 = st.columns(4)
-                c1.metric("Line Balance", f"{line_balance(item, line_id):,.2f} KG")
-                c2.metric("Ready Stock", f"{ready:,.2f} KG")
-                c3.metric("Rate", f"₹{item['rate']:,.2f}/KG")
+                c1.metric("Balance", f"{line_balance(item, lid):,.2f} KG")
+                c2.metric("Verified Ready", f"{ready:,.2f} KG")
+                c3.metric("Rate", f"₹{item['rate']:,.2f}")
                 c4.metric("Priority", order.get("priority", "Normal"))
 
-                if job:
-                    st.caption(f"Production: {job.get('line', '-')} / {job.get('team', '-')}")
-
                 c5, c6 = st.columns(2)
-                truck = c5.text_input("Truck Number", key=f"truck_{index}")
-                driver = c6.text_input("Driver", key=f"driver_{index}")
+                truck = c5.text_input("Truck No", key=f"t_{i}")
+                driver = c6.text_input("Driver", key=f"d_{i}")
 
-                loading_weight = st.number_input(
-                    "Loading Quantity KG",
-                    min_value=0.0,
-                    max_value=float(ready),
-                    value=float(ready),
-                    step=100.0,
-                    key=f"dispatch_qty_{index}",
-                )
-                dispatch_rate = st.number_input(
-                    "Dispatch Rate ₹ / KG",
-                    min_value=0.0,
-                    value=float(item["rate"]),
-                    step=1.0,
-                    key=f"dispatch_rate_{index}",
-                )
-                remarks = st.text_area("Dispatch Remarks", key=f"dispatch_remarks_{index}")
+                load_qty = st.number_input("Loading KG", min_value=0.0,
+                                           max_value=float(ready), value=float(ready), step=100.0, key=f"lq_{i}")
+                d_rate = st.number_input("Rate ₹/KG", min_value=0.0, value=float(item["rate"]), step=1.0, key=f"dr_{i}")
+                d_notes = st.text_area("Remarks", key=f"dn_{i}")
 
-                if st.button("🚚 Confirm Loading & Dispatch", key=f"dispatch_{index}"):
-                    if loading_weight <= 0:
-                        st.error("Loading quantity must be greater than zero.")
+                if st.button("🚚 Confirm Dispatch", key=f"disp_{i}"):
+                    if load_qty <= 0:
+                        st.error("Quantity must be > 0.")
                     else:
                         st.session_state.dispatch_records.append({
-                            "line_id": line_id,
-                            "order_id": order["id"],
+                            "line_id": lid, "order_id": order["id"],
                             "customer": order["customer"],
-                            "product": item["product"],
-                            "size": item["size"],
+                            "product": item["product"], "size": item["size"],
                             "product_key": product_key(item["product"], item["size"]),
-                            "quantity": loading_weight,
-                            "rate": dispatch_rate,
-                            "value": loading_weight * dispatch_rate,
-                            "truck": truck.strip(),
-                            "driver": driver.strip(),
-                            "remarks": remarks.strip(),
-                            "date": str(date.today()),
+                            "quantity": load_qty, "rate": d_rate, "value": load_qty * d_rate,
+                            "truck": truck.strip(), "driver": driver.strip(),
+                            "remarks": d_notes.strip(), "date": str(date.today()),
                             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         })
                         save_data()
-                        st.success(f"{loading_weight:,.2f} KG dispatched.")
+                        st.success(f"{load_qty:,.2f} KG dispatched.")
                         st.rerun()
 
 
 # =========================================================
-# ORDER BALANCE & CLOSURE
+# ORDER BALANCE
 # =========================================================
 
 elif menu == "Order Balance & Closure":
     st.header("📌 Order Balance & Closure")
 
     if not st.session_state.orders:
-        st.info("No customer orders.")
+        st.info("No orders.")
     else:
-        for index, order in enumerate(st.session_state.orders):
+        for i, order in enumerate(st.session_state.orders):
             bal = order_balance(order)
             qty = order_quantity(order)
-
-            with st.expander(
-                f"{order['id']} | {order['customer']} | "
-                f"{len(order.get('items', []))} item(s) | Balance {bal:,.2f} KG"
-            ):
+            with st.expander(f"{order['id']} | {order['customer']} | Balance {bal:,.2f} KG"):
                 c1, c2, c3 = st.columns(3)
                 c1.metric("Order Qty", f"{qty:,.2f} KG")
                 c2.metric("Dispatched", f"{qty - bal:,.2f} KG")
                 c3.metric("Balance", f"{bal:,.2f} KG")
 
-                st.write(f"**Overall Status:** {order_status(order)}")
-
                 st.subheader("Line Items")
-                line_rows = []
-                for idx, (line_id, item) in enumerate(line_items(order), start=1):
-                    lb = line_balance(item, line_id)
-                    line_rows.append({
-                        "Item #": idx,
-                        "Line ID": line_id,
-                        "Product": item["product"],
-                        "Size": item["size"],
-                        "Qty KG": item["quantity"],
-                        "Dispatched KG": item["quantity"] - lb,
-                        "Balance KG": lb,
-                        "Status": line_status(item, line_id),
-                    })
-                st.dataframe(line_rows, use_container_width=True, hide_index=True)
+                rows = []
+                for idx, (lid, item) in enumerate(line_items(order), 1):
+                    lb = line_balance(item, lid)
+                    rows.append({"Item #": idx, "Line ID": lid, "Product": item["product"],
+                                 "Size": item["size"], "Qty KG": item["quantity"],
+                                 "Dispatched KG": item["quantity"] - lb, "Balance KG": lb,
+                                 "Status": line_status(item, lid)})
+                st.dataframe(rows, use_container_width=True, hide_index=True)
 
-                closure_note = st.text_area("Closure Note", key=f"closure_note_{index}")
-
-                if st.button("🔒 Close Order", key=f"close_{index}"):
+                note = st.text_area("Closure Note", key=f"cl_{i}")
+                if st.button("🔒 Close Order", key=f"c_{i}"):
                     st.session_state.order_closures.append({
-                        "order_id": order["id"],
-                        "date": str(date.today()),
-                        "balance_at_closure": bal,
-                        "note": closure_note.strip(),
+                        "order_id": order["id"], "date": str(date.today()),
+                        "balance_at_closure": bal, "note": note.strip(),
                     })
                     save_data()
-                    st.success(f"{order['id']} marked for closure.")
+                    st.success(f"{order['id']} closed.")
 
 
 # =========================================================
@@ -1229,161 +1034,104 @@ elif menu == "Order Balance & Closure":
 elif menu == "Daily Factory Report":
     st.header("🤖 Daily Factory AI Report")
 
-    report_date = st.date_input("Report Date", value=date.today())
-    report_date_str = str(report_date)
+    rd = st.date_input("Report Date", value=date.today())
+    rds = str(rd)
 
-    raw_received_today = sum(float(x.get("quantity", 0)) for x in st.session_state.raw_receipts if x.get("date") == report_date_str)
-    raw_consumed_today = sum(float(x.get("raw_input", 0)) for x in st.session_state.material_consumption if x.get("date") == report_date_str)
-    material_cost_today = sum(float(x.get("material_cost", 0)) for x in st.session_state.material_consumption if x.get("date") == report_date_str)
-    finished_today = sum(float(x.get("finished", 0)) for x in st.session_state.material_consumption if x.get("date") == report_date_str)
-    wastage_today = sum(float(x.get("wastage", 0)) for x in st.session_state.material_consumption if x.get("date") == report_date_str)
-    damage_today = sum(float(x.get("damage", 0)) for x in st.session_state.material_consumption if x.get("date") == report_date_str)
-    scrap_today = sum(float(x.get("scrap", 0)) for x in st.session_state.material_consumption if x.get("date") == report_date_str)
-    labour_today = sum(float(x.get("cost", 0)) for x in st.session_state.labour_entries if x.get("date") == report_date_str)
-    verified_today = sum(float(x.get("quantity", 0)) for x in st.session_state.store_verifications if x.get("date") == report_date_str)
-    dispatched_today = sum(float(x.get("quantity", 0)) for x in st.session_state.dispatch_records if x.get("date") == report_date_str)
-    dispatch_value_today = sum(float(x.get("value", 0)) for x in st.session_state.dispatch_records if x.get("date") == report_date_str)
+    raw_recv = sum(float(x.get("quantity", 0)) for x in st.session_state.raw_receipts if x.get("date") == rds)
+    raw_cons = sum(float(x.get("raw_input", 0)) for x in st.session_state.material_consumption if x.get("date") == rds)
+    mat_cost = sum(float(x.get("material_cost", 0)) for x in st.session_state.material_consumption if x.get("date") == rds)
+    finished = sum(float(x.get("finished", 0)) for x in st.session_state.material_consumption if x.get("date") == rds)
+    wastage = sum(float(x.get("wastage", 0)) for x in st.session_state.material_consumption if x.get("date") == rds)
+    damage = sum(float(x.get("damage", 0)) for x in st.session_state.material_consumption if x.get("date") == rds)
+    scrap = sum(float(x.get("scrap", 0)) for x in st.session_state.material_consumption if x.get("date") == rds)
+    labour = sum(float(x.get("cost", 0)) for x in st.session_state.labour_entries if x.get("date") == rds)
+    verified = sum(float(x.get("quantity", 0)) for x in st.session_state.store_verifications if x.get("date") == rds)
+    dispatched = sum(float(x.get("quantity", 0)) for x in st.session_state.dispatch_records if x.get("date") == rds)
+    disp_value = sum(float(x.get("value", 0)) for x in st.session_state.dispatch_records if x.get("date") == rds)
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Raw Received", f"{raw_received_today:,.2f} KG")
-    c2.metric("Raw Consumed", f"{raw_consumed_today:,.2f} KG")
-    c3.metric("Finished Production", f"{finished_today:,.2f} KG")
-    c4.metric("Dispatched", f"{dispatched_today:,.2f} KG")
+    c1.metric("Raw Received", f"{raw_recv:,.2f} KG")
+    c2.metric("Raw Consumed", f"{raw_cons:,.2f} KG")
+    c3.metric("Finished", f"{finished:,.2f} KG")
+    c4.metric("Dispatched", f"{dispatched:,.2f} KG")
 
     c5, c6, c7, c8 = st.columns(4)
-    c5.metric("Wastage", f"{wastage_today:,.2f} KG")
-    c6.metric("Damage", f"{damage_today:,.2f} KG")
-    c7.metric("Labour Cost", f"₹{labour_today:,.2f}")
-    c8.metric("Dispatch Value", f"₹{dispatch_value_today:,.2f}")
-
-    st.divider()
-    st.subheader("📊 Factory AI Management Summary")
+    c5.metric("Wastage", f"{wastage:,.2f} KG")
+    c6.metric("Damage", f"{damage:,.2f} KG")
+    c7.metric("Labour Cost", f"₹{labour:,.2f}")
+    c8.metric("Dispatch Value", f"₹{disp_value:,.2f}")
 
     active_jobs = len([j for j in st.session_state.production_jobs if j.get("status") == "IN PRODUCTION"])
     store_pending = len(production_jobs_waiting_store())
     loading_ready = sum(x["ready"] for x in dispatch_queue())
 
-    messages = []
-    if raw_received_today == 0:
-        messages.append("• No raw material was received today.")
-    if finished_today > 0:
-        messages.append(f"• Factory produced {finished_today:,.2f} KG today.")
-    else:
-        messages.append("• No production was recorded today.")
-    if wastage_today > 0:
-        messages.append(f"• Wastage recorded: {wastage_today:,.2f} KG.")
-    if damage_today > 0:
-        messages.append(f"• Damaged material: {damage_today:,.2f} KG.")
-    if labour_today > 0:
-        messages.append(f"• Labour cost recorded: ₹{labour_today:,.2f}.")
-    if dispatched_today > 0:
-        messages.append(f"• {dispatched_today:,.2f} KG dispatched.")
-    if active_jobs > 0:
-        messages.append(f"• {active_jobs} production job(s) remain active.")
-    if store_pending > 0:
-        messages.append(f"• {store_pending} production job(s) need store verification.")
-    if loading_ready > 0:
-        messages.append(f"• {loading_ready:,.2f} KG is ready for loading.")
-
-    for message in messages:
-        st.write(message)
-
     st.divider()
     st.subheader("📱 WhatsApp-Ready Daily Report")
 
-    whatsapp_report = f"""
+    report = f"""
 🏭 FACTORY AI — DAILY REPORT
 
-Date: {report_date_str}
+Date: {rds}
 
 PRODUCTION
-Finished Production: {finished_today:,.2f} KG
+Finished: {finished:,.2f} KG
 
 MATERIAL
-Raw Material Received: {raw_received_today:,.2f} KG
-Raw Material Consumed: {raw_consumed_today:,.2f} KG
-Wastage: {wastage_today:,.2f} KG
-Damage: {damage_today:,.2f} KG
-Reusable Scrap: {scrap_today:,.2f} KG
+Raw Received: {raw_recv:,.2f} KG
+Raw Consumed: {raw_cons:,.2f} KG
+Wastage: {wastage:,.2f} KG
+Damage: {damage:,.2f} KG
+Scrap: {scrap:,.2f} KG
 
 COST
-Material Cost: ₹{material_cost_today:,.2f}
-Labour Cost: ₹{labour_today:,.2f}
+Material: ₹{mat_cost:,.2f}
+Labour: ₹{labour:,.2f}
 
 STORE
-Verified Finished Goods: {verified_today:,.2f} KG
+Verified: {verified:,.2f} KG
 
 DISPATCH
-Dispatched: {dispatched_today:,.2f} KG
-Dispatch Value: ₹{dispatch_value_today:,.2f}
+Dispatched: {dispatched:,.2f} KG
+Value: ₹{disp_value:,.2f}
 
-FACTORY STATUS
-Active Production Jobs: {active_jobs}
-Store Verification Pending: {store_pending}
+STATUS
+Active Jobs: {active_jobs}
+Store Pending: {store_pending}
 Loading Ready: {loading_ready:,.2f} KG
-
-MANAGEMENT NOTE
-Production, material, wastage, labour and dispatch
-figures should be reviewed before closing the day.
 """
-
-    st.code(whatsapp_report, language="text")
-
-    st.download_button(
-        "📥 Download Daily Report",
-        data=whatsapp_report,
-        file_name=f"factory_report_{report_date_str}.txt",
-        mime="text/plain",
-    )
+    st.code(report, language="text")
+    st.download_button("📥 Download", report, file_name=f"report_{rds}.txt")
 
 
 # =========================================================
-# BILLS & DOCUMENTS
+# BILLS
 # =========================================================
 
 elif menu == "Bills & Documents":
     st.header("📄 Bills & Documents")
 
     if not st.session_state.dispatch_records:
-        st.info("No dispatch records available.")
+        st.info("No dispatch records.")
     else:
-        st.subheader("Dispatch History")
         st.dataframe(st.session_state.dispatch_records, use_container_width=True, hide_index=True)
 
         st.divider()
-        st.subheader("🧾 Dispatch Bill Preview")
-
-        order_ids = list(dict.fromkeys(x["order_id"] for x in st.session_state.dispatch_records))
-        selected_order = st.selectbox("Select Order", order_ids)
-
-        records = [x for x in st.session_state.dispatch_records if x["order_id"] == selected_order]
-
-        if records:
-            st.markdown(f"### FACTORY DISPATCH DOCUMENT — {selected_order}")
-            for r in records:
-                st.markdown(
-                    f"""
-**Line:** {r.get('line_id', '-')}  
-**Customer:** {r.get('customer', '-')}  
-**Product:** {r['product']} | **Size:** {r['size']}  
-**Quantity:** {r['quantity']:,.2f} KG | **Rate:** ₹{r['rate']:,.2f} / KG | **Value:** ₹{r['value']:,.2f}  
-**Truck:** {r['truck']} | **Driver:** {r['driver']} | **Date:** {r['date']}  
-**Remarks:** {r['remarks']}
-"""
-                )
-                st.divider()
+        st.subheader("🧾 Dispatch Bill")
+        oids = list(dict.fromkeys(x["order_id"] for x in st.session_state.dispatch_records))
+        sel = st.selectbox("Order", oids)
+        for r in [x for x in st.session_state.dispatch_records if x["order_id"] == sel]:
+            st.markdown(f"""
+**{r['order_id']}** — {r.get('customer', '-')}  
+{r['product']} | {r['size']} | {r['quantity']:,.2f} KG @ ₹{r['rate']:,.2f} = **₹{r['value']:,.2f}**  
+Truck: {r['truck']} | Driver: {r['driver']} | {r['date']}
+""")
 
 
 # =========================================================
 # FOOTER
 # =========================================================
 
-# Persist any changes that happened this run (covers all write paths)
 save_data()
 
 st.divider()
-
-st.caption(
-    "Factory AI • Clean Offline Demo • No Fake Factory Data • "
-    "Designed for manufacturing / steel factory operations"
-)
+st.caption("Factory AI • Production & Dispatch Control • Designed for manufacturing operations")
