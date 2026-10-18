@@ -304,6 +304,30 @@ def store_whatsapp_text(order: dict) -> str:
     return "\n".join(lines)
 
 
+def dispatch_whatsapp_text(order: dict) -> str:
+    lines = [
+        "🚚 NEW ORDER — DISPATCH PLANNING",
+        "",
+        f"Order: {order['id']}",
+        f"Customer: {order['customer']}",
+        f"Priority: {order.get('priority', 'Normal')}",
+        f"Delivery: {order.get('pickup_date', '-')}",
+        "",
+        "ITEMS:",
+    ]
+    for i, item in enumerate(order.get("items", []), start=1):
+        ready = available_finished_stock(item["product"], item["size"])
+        lines.append(
+            f"{i}. {item['product']} | {item['size']} | "
+            f"Qty {item['quantity']:,.2f} KG | "
+            f"Verified ready: {ready:,.2f} KG"
+        )
+    lines.append("")
+    lines.append("Please plan truck, driver and loading team.")
+    lines.append("Dispatch only verified stock — check Loading & Dispatch page.")
+    return "\n".join(lines)
+
+
 # =========================================================
 # HEADER
 # =========================================================
@@ -327,6 +351,7 @@ menu = st.sidebar.radio(
         "New Customer Order",
         "📤 Send to Production",
         "📤 Send to Store",
+        "📤 Send to Dispatch",
         "Material Receiving",
         "Raw Material Stock",
         "Production Planning",
@@ -412,7 +437,7 @@ if menu == "Owner Dashboard":
 
 
 # =========================================================
-# FACTORY SETUP (now with phone numbers)
+# FACTORY SETUP
 # =========================================================
 
 elif menu == "Factory Setup":
@@ -458,7 +483,7 @@ elif menu == "Factory Setup":
 
 
 # =========================================================
-# NEW CUSTOMER ORDER (with WhatsApp shortcut after creation)
+# NEW CUSTOMER ORDER
 # =========================================================
 
 elif menu == "New Customer Order":
@@ -471,6 +496,7 @@ elif menu == "New Customer Order":
 
         pm_phone = st.session_state.get("production_manager_phone", "").strip()
         sm_phone = st.session_state.get("store_manager_phone", "").strip()
+        dm_phone = st.session_state.get("dispatch_manager_phone", "").strip()
 
         if pm_phone:
             st.link_button(
@@ -485,6 +511,12 @@ elif menu == "New Customer Order":
             st.link_button(
                 "📦 Send Order to Store Manager via WhatsApp",
                 build_whatsapp_link(sm_phone, store_whatsapp_text(last)),
+            )
+
+        if dm_phone:
+            st.link_button(
+                "🚚 Send Order to Dispatch Manager via WhatsApp",
+                build_whatsapp_link(dm_phone, dispatch_whatsapp_text(last)),
             )
 
         if st.button("✖ Close this message and create another order"):
@@ -635,6 +667,41 @@ elif menu == "📤 Send to Store":
 
                 st.link_button(
                     "📦 Open WhatsApp with this order",
+                    build_whatsapp_link(phone, preview),
+                    type="primary",
+                )
+
+
+# =========================================================
+# SEND TO DISPATCH (WhatsApp)
+# =========================================================
+
+elif menu == "📤 Send to Dispatch":
+    st.header("🚚 Send Orders to Dispatch Manager")
+
+    phone = st.session_state.get("dispatch_manager_phone", "").strip()
+
+    if not phone:
+        st.warning("Add the Dispatch Manager's WhatsApp number in **Factory Setup** first.")
+    elif not st.session_state.orders:
+        st.info("No customer orders yet. Create one first.")
+    else:
+        st.caption(
+            "Each message shows the verified stock ready to dispatch per item. "
+            "Tap the button, WhatsApp opens pre-filled — just press Send."
+        )
+
+        for order in reversed(st.session_state.orders):
+            with st.expander(
+                f"{order['id']} | {order['customer']} | "
+                f"{len(order.get('items', []))} item(s) | "
+                f"{order.get('priority', 'Normal')}"
+            ):
+                preview = dispatch_whatsapp_text(order)
+                st.code(preview, language="text")
+
+                st.link_button(
+                    "🚚 Open WhatsApp with this order",
                     build_whatsapp_link(phone, preview),
                     type="primary",
                 )
