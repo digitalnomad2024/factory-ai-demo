@@ -2,7 +2,9 @@ import streamlit as st
 import pandas as pd
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from urllib.parse import quote
 import json
+import re
 
 
 # =========================================================
@@ -104,6 +106,9 @@ DEFAULTS = {
     "factory_lines": ["Line 1", "Line 2", "Line 3", "Cutting Line", "Rolling Line", "Finishing Line"],
     "factory_teams": ["Team A", "Team B", "Team C", "Shift 1", "Shift 2", "Shift 3"],
     "factory_products": ["Flat Bar", "Round Bar", "Angle", "Channel", "Square Bar"],
+    "production_manager_phone": "",
+    "store_manager_phone": "",
+    "dispatch_manager_phone": "",
     "next_order": 1001,
 }
 
@@ -121,7 +126,6 @@ def product_key(product, size):
 
 
 def line_items(order):
-    """Return list of (line_id, item_dict). Handles legacy single-item orders."""
     items = order.get("items")
     if not items:
         items = [{
@@ -241,6 +245,63 @@ def clear_all_demo_data():
     st.session_state.next_order = 1001
     st.session_state.pop("new_order_items_df", None)
     st.session_state.pop("new_order_items_editor", None)
+    st.session_state.pop("last_created_order", None)
+
+
+# =========================================================
+# WHATSAPP HELPERS
+# =========================================================
+
+def clean_phone(phone: str) -> str:
+    """Keep only digits. Must include country code, e.g. 919876543210."""
+    return re.sub(r"\D", "", phone or "")
+
+
+def build_whatsapp_link(phone: str, message: str) -> str:
+    """Return a wa.me link that opens WhatsApp with the message pre-filled."""
+    return f"https://wa.me/{clean_phone(phone)}?text={quote(message)}"
+
+
+def order_whatsapp_text(order: dict) -> str:
+    lines = [
+        "🏭 NEW PRODUCTION ORDER",
+        "",
+        f"Order: {order['id']}",
+        f"Customer: {order['customer']}",
+        f"Priority: {order.get('priority', 'Normal')}",
+        f"Delivery: {order.get('pickup_date', '-')}",
+        "",
+        "ITEMS TO PRODUCE:",
+    ]
+    for i, item in enumerate(order.get("items", []), start=1):
+        lines.append(
+            f"{i}. {item['product']} | {item['size']} | {item['quantity']:,.2f} KG"
+        )
+    if order.get("remarks"):
+        lines.append("")
+        lines.append(f"Remarks: {order['remarks']}")
+    lines.append("")
+    lines.append("Please confirm production line and team.")
+    return "\n".join(lines)
+
+
+def store_whatsapp_text(order: dict) -> str:
+    lines = [
+        "📦 NEW ORDER — STORE / MATERIAL CHECK",
+        "",
+        f"Order: {order['id']}",
+        f"Customer: {order['customer']}",
+        f"Delivery: {order.get('pickup_date', '-')}",
+        "",
+        "ITEMS TO PREPARE / VERIFY:",
+    ]
+    for i, item in enumerate(order.get("items", []), start=1):
+        lines.append(
+            f"{i}. {item['product']} | {item['size']} | {item['quantity']:,.2f} KG"
+        )
+    lines.append("")
+    lines.append("Please confirm raw material availability and finished-goods space.")
+    return "\n".join(lines)
 
 
 # =========================================================
@@ -264,6 +325,8 @@ menu = st.sidebar.radio(
         "Owner Dashboard",
         "Factory Setup",
         "New Customer Order",
+        "📤 Send to Production",
+        "📤 Send to Store",
         "Material Receiving",
         "Raw Material Stock",
         "Production Planning",
@@ -349,12 +412,34 @@ if menu == "Owner Dashboard":
 
 
 # =========================================================
-# FACTORY SETUP
+# FACTORY SETUP (now with phone numbers)
 # =========================================================
 
 elif menu == "Factory Setup":
     st.header("⚙️ Factory Setup")
-    st.write("Configure your actual factory production lines, teams and products.")
+    st.write("Configure your factory lines, teams, products and WhatsApp contacts.")
+
+    st.subheader("📱 WhatsApp Contacts")
+    st.caption("Include country code. Example: 919876543210 (India +91).")
+
+    c1, c2, c3 = st.columns(3)
+    st.session_state.production_manager_phone = c1.text_input(
+        "Production Manager WhatsApp",
+        value=st.session_state.production_manager_phone,
+        placeholder="919876543210",
+    )
+    st.session_state.store_manager_phone = c2.text_input(
+        "Store Manager WhatsApp",
+        value=st.session_state.store_manager_phone,
+        placeholder="919876543210",
+    )
+    st.session_state.dispatch_manager_phone = c3.text_input(
+        "Dispatch Manager WhatsApp",
+        value=st.session_state.dispatch_manager_phone,
+        placeholder="919876543210",
+    )
+
+    st.divider()
 
     st.subheader("Production Lines")
     lines_text = st.text_area("Production Lines", value="\n".join(st.session_state.factory_lines), height=150)
@@ -365,7 +450,7 @@ elif menu == "Factory Setup":
     st.subheader("Products")
     products_text = st.text_area("Products", value="\n".join(st.session_state.factory_products), height=150)
 
-    if st.button("💾 Save Factory Setup"):
+    if st.button("💾 Save Factory Setup", type="primary"):
         st.session_state.factory_lines = [x.strip() for x in lines_text.splitlines() if x.strip()]
         st.session_state.factory_teams = [x.strip() for x in teams_text.splitlines() if x.strip()]
         st.session_state.factory_products = [x.strip() for x in products_text.splitlines() if x.strip()]
@@ -373,11 +458,40 @@ elif menu == "Factory Setup":
 
 
 # =========================================================
-# NEW CUSTOMER ORDER (with multi-item support)
+# NEW CUSTOMER ORDER (with WhatsApp shortcut after creation)
 # =========================================================
 
 elif menu == "New Customer Order":
     st.header("📝 New Customer Order")
+
+    last = st.session_state.get("last_created_order")
+
+    if last:
+        st.success(f"✅ Order {last['id']} created successfully for {last['customer']}.")
+
+        pm_phone = st.session_state.get("production_manager_phone", "").strip()
+        sm_phone = st.session_state.get("store_manager_phone", "").strip()
+
+        if pm_phone:
+            st.link_button(
+                "📱 Send Order to Production Manager via WhatsApp",
+                build_whatsapp_link(pm_phone, order_whatsapp_text(last)),
+                type="primary",
+            )
+        else:
+            st.info("Set the Production Manager's WhatsApp number in Factory Setup to enable one-tap sharing.")
+
+        if sm_phone:
+            st.link_button(
+                "📦 Send Order to Store Manager via WhatsApp",
+                build_whatsapp_link(sm_phone, store_whatsapp_text(last)),
+            )
+
+        if st.button("✖ Close this message and create another order"):
+            st.session_state.pop("last_created_order", None)
+            st.rerun()
+
+        st.divider()
 
     c1, c2 = st.columns(2)
     customer = c1.text_input("Customer / Company Name")
@@ -392,8 +506,7 @@ elif menu == "New Customer Order":
     st.subheader("📦 Order Items")
     st.caption(
         "One order can contain multiple products, sizes or specifications. "
-        "Click the ➕ row at the bottom of the table to add a line. "
-        "Each line becomes its own production and dispatch item under the same order ID."
+        "Click the ➕ row at the bottom of the table to add a line."
     )
 
     if "new_order_items_df" not in st.session_state:
@@ -454,8 +567,77 @@ elif menu == "New Customer Order":
                 {"product": st.session_state.factory_products[0], "size": "", "quantity": 0.0, "rate": 0.0}
             ])
             st.session_state.pop("new_order_items_editor", None)
-            st.success(f"Customer order {order_number} created with {len(valid_items)} item(s).")
+            st.session_state.last_created_order = order
             st.rerun()
+
+
+# =========================================================
+# SEND TO PRODUCTION (WhatsApp)
+# =========================================================
+
+elif menu == "📤 Send to Production":
+    st.header("📤 Send Orders to Production Manager")
+
+    phone = st.session_state.get("production_manager_phone", "").strip()
+
+    if not phone:
+        st.warning("Add the Production Manager's WhatsApp number in **Factory Setup** first.")
+    elif not st.session_state.orders:
+        st.info("No customer orders yet. Create one first.")
+    else:
+        st.caption(
+            "Tap the button for the order you want to send. "
+            "WhatsApp will open with the full order pre-filled — just press Send."
+        )
+
+        for order in reversed(st.session_state.orders):
+            with st.expander(
+                f"{order['id']} | {order['customer']} | "
+                f"{len(order.get('items', []))} item(s) | "
+                f"{order.get('priority', 'Normal')}"
+            ):
+                preview = order_whatsapp_text(order)
+                st.code(preview, language="text")
+
+                st.link_button(
+                    "📱 Open WhatsApp with this order",
+                    build_whatsapp_link(phone, preview),
+                    type="primary",
+                )
+
+
+# =========================================================
+# SEND TO STORE (WhatsApp)
+# =========================================================
+
+elif menu == "📤 Send to Store":
+    st.header("📦 Send Orders to Store Manager")
+
+    phone = st.session_state.get("store_manager_phone", "").strip()
+
+    if not phone:
+        st.warning("Add the Store Manager's WhatsApp number in **Factory Setup** first.")
+    elif not st.session_state.orders:
+        st.info("No customer orders yet. Create one first.")
+    else:
+        st.caption(
+            "Tap the button for the order you want to send. "
+            "WhatsApp will open with the full order pre-filled — just press Send."
+        )
+
+        for order in reversed(st.session_state.orders):
+            with st.expander(
+                f"{order['id']} | {order['customer']} | "
+                f"{len(order.get('items', []))} item(s)"
+            ):
+                preview = store_whatsapp_text(order)
+                st.code(preview, language="text")
+
+                st.link_button(
+                    "📦 Open WhatsApp with this order",
+                    build_whatsapp_link(phone, preview),
+                    type="primary",
+                )
 
 
 # =========================================================
