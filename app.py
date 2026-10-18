@@ -16,6 +16,50 @@ st.set_page_config(
 
 
 # =========================================================
+# TRIAL ACCESS PASSWORD GATE
+# =========================================================
+
+def get_app_password():
+    """Return the configured trial password, or None if not set."""
+    try:
+        return st.secrets["APP_PASSWORD"]
+    except Exception:
+        return None
+
+
+def check_password():
+    """Return True if the visitor has entered the correct trial code."""
+    expected = get_app_password()
+
+    # No password configured -> allow access (local development)
+    if not expected:
+        return True
+
+    if st.session_state.get("authenticated"):
+        return True
+
+    st.title("🔐 Factory AI — Trial Access")
+    st.caption("Enter the access code shared with you for the 7-day trial.")
+
+    with st.form("trial_login"):
+        pwd = st.text_input("Access Code", type="password")
+        submitted = st.form_submit_button("Enter", type="primary")
+
+    if submitted:
+        if pwd == expected:
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.error("Incorrect access code. Please try again.")
+
+    return False
+
+
+if not check_password():
+    st.stop()
+
+
+# =========================================================
 # 7-DAY DEMO TRIAL
 # =========================================================
 
@@ -26,10 +70,13 @@ TRIAL_DAYS = 7
 def load_trial_start():
     if not TRIAL_FILE.exists():
         today = date.today().isoformat()
-        TRIAL_FILE.write_text(
-            json.dumps({"start_date": today}),
-            encoding="utf-8"
-        )
+        try:
+            TRIAL_FILE.write_text(
+                json.dumps({"start_date": today}),
+                encoding="utf-8"
+            )
+        except Exception:
+            pass
         return date.today()
 
     try:
@@ -337,6 +384,10 @@ st.sidebar.divider()
 if st.sidebar.button("🗑️ Reset Demo Data"):
     clear_all_demo_data()
     st.success("All factory demo data has been cleared.")
+    st.rerun()
+
+if get_app_password() and st.sidebar.button("🚪 Log Out"):
+    st.session_state["authenticated"] = False
     st.rerun()
 
 
