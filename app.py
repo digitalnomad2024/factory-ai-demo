@@ -91,6 +91,54 @@ days_left = max(0, (trial_end - date.today()).days)
 
 
 # =========================================================
+# PERSISTENCE (JSON file on server disk)
+# =========================================================
+
+DATA_FILE = Path(__file__).with_name("factory_data.json")
+
+PERSIST_KEYS = [
+    "orders",
+    "raw_receipts",
+    "material_consumption",
+    "production_jobs",
+    "dispatch_records",
+    "store_verifications",
+    "order_closures",
+    "labour_entries",
+    "factory_lines",
+    "factory_teams",
+    "factory_products",
+    "production_manager_phone",
+    "store_manager_phone",
+    "dispatch_manager_phone",
+    "next_order",
+]
+
+
+def save_data():
+    try:
+        data = {k: st.session_state[k] for k in PERSIST_KEYS}
+        DATA_FILE.write_text(
+            json.dumps(data, indent=2, default=str),
+            encoding="utf-8",
+        )
+    except Exception as e:
+        print(f"[save_data] failed: {e}")
+
+
+def load_data():
+    if not DATA_FILE.exists():
+        return
+    try:
+        data = json.loads(DATA_FILE.read_text(encoding="utf-8"))
+        for key, value in data.items():
+            if key in PERSIST_KEYS:
+                st.session_state[key] = value
+    except Exception as e:
+        print(f"[load_data] failed: {e}")
+
+
+# =========================================================
 # SESSION DATA
 # =========================================================
 
@@ -115,6 +163,12 @@ DEFAULTS = {
 for key, value in DEFAULTS.items():
     if key not in st.session_state:
         st.session_state[key] = value.copy() if isinstance(value, list) else value
+
+
+# Load saved data once per session (survives logout, refresh, browser close)
+if "data_loaded" not in st.session_state:
+    load_data()
+    st.session_state["data_loaded"] = True
 
 
 # =========================================================
@@ -246,6 +300,11 @@ def clear_all_demo_data():
     st.session_state.pop("new_order_items_df", None)
     st.session_state.pop("new_order_items_editor", None)
     st.session_state.pop("last_created_order", None)
+    try:
+        if DATA_FILE.exists():
+            DATA_FILE.unlink()
+    except Exception:
+        pass
 
 
 # =========================================================
@@ -479,6 +538,7 @@ elif menu == "Factory Setup":
         st.session_state.factory_lines = [x.strip() for x in lines_text.splitlines() if x.strip()]
         st.session_state.factory_teams = [x.strip() for x in teams_text.splitlines() if x.strip()]
         st.session_state.factory_products = [x.strip() for x in products_text.splitlines() if x.strip()]
+        save_data()
         st.success("Factory setup saved.")
 
 
@@ -600,6 +660,7 @@ elif menu == "New Customer Order":
             ])
             st.session_state.pop("new_order_items_editor", None)
             st.session_state.last_created_order = order
+            save_data()
             st.rerun()
 
 
@@ -754,6 +815,7 @@ elif menu == "Material Receiving":
                 "remarks": remarks.strip(),
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             })
+            save_data()
             st.success(f"{quantity:,.2f} KG received successfully.")
 
 
@@ -842,6 +904,7 @@ elif menu == "Production Planning":
                                 "status": "PLANNED",
                                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             })
+                            save_data()
                             st.success("Production job created.")
                             st.rerun()
                     else:
@@ -945,6 +1008,7 @@ elif menu == "Production Line":
                                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             })
 
+                            save_data()
                             st.success(f"{finished:,.2f} KG production recorded.")
                             st.rerun()
 
@@ -967,6 +1031,7 @@ elif menu == "Production Line":
                             "cost": hours * hourly_rate,
                             "date": str(date.today()),
                         })
+                        save_data()
                         st.success("Labour cost added.")
                     else:
                         st.error("Enter worker name and hours.")
@@ -1020,6 +1085,7 @@ elif menu == "Store Verification":
                             job["status"] = "VERIFIED"
                         else:
                             job["status"] = "PARTIALLY VERIFIED"
+                        save_data()
                         st.success(f"{quantity:,.2f} KG moved to finished goods stock.")
                         st.rerun()
 
@@ -1097,6 +1163,7 @@ elif menu == "Loading & Dispatch":
                             "date": str(date.today()),
                             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         })
+                        save_data()
                         st.success(f"{loading_weight:,.2f} KG dispatched.")
                         st.rerun()
 
@@ -1151,6 +1218,7 @@ elif menu == "Order Balance & Closure":
                         "balance_at_closure": bal,
                         "note": closure_note.strip(),
                     })
+                    save_data()
                     st.success(f"{order['id']} marked for closure.")
 
 
@@ -1309,6 +1377,9 @@ elif menu == "Bills & Documents":
 # =========================================================
 # FOOTER
 # =========================================================
+
+# Persist any changes that happened this run (covers all write paths)
+save_data()
 
 st.divider()
 

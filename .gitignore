@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 factory_trial.json
 .streamlit/secrets.toml
+factory_data.json
